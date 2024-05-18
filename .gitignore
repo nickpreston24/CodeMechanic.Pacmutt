@@ -1,0 +1,6 @@
+nupkg/
+obj/
+bin/
+.idea/
+node_modules
+.env
