@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using CodeMechanic.Advanced.Regex;
+using CodeMechanic.Async;
 using CodeMechanic.Diagnostics;
 using CodeMechanic.FileSystem;
 using CodeMechanic.Shargs;
@@ -13,17 +14,26 @@ Console.WriteLine("Hello, Woof!");
 
 var cmds = new ArgumentsCollection(args);
 
-(var _, var project_directories) = cmds.Matching("-p", "--projects");
-project_directories.Dump("project directories");
+// (var _, var project_directories) = cmds.Matching("-p", "--projects");
+// project_directories.Dump("project directories"); // Todo: allow dashes in shargs regex!!  Example: `code-mechanic` gets parsed as `code`!!
+
 (var _, var root_dir) = cmds.Matching("-r", "--root-dir");
 
-string root = (root_dir.SingleOrDefault() ?? string.Empty).GoUp();
-root.Dump("root");
+// string root = (root_dir.SingleOrDefault() ?? string.Empty).GoUp();
+string root = root_dir.SingleOrDefault() ?? Directory.GetCurrentDirectory().GoUp();
+Console.WriteLine("root :>> " + root);
 
 bool root_exists = Path.Exists(root);
-Console.WriteLine($"root exists? {root_exists}");
+// Console.WriteLine($"root exists? {root_exists}");
 
-var all_projects = new ProjectSniffer().DiscoverProjects(root);
+var sniffer = new ProjectSniffer();
+var all_projects = await sniffer.DiscoverProjects(root);
+Console.WriteLine("Total projects to upgrade :>> " +
+                  all_projects.DistinctBy(proj => proj.grep_result.FileName).Count());
+
+var stats = await sniffer.UpdateAllProjects(all_projects);
+stats.Dump(nameof(stats));
+
 
 public class ProjectSniffer
 {
@@ -38,16 +48,27 @@ public class ProjectSniffer
         };
         folders_I_wanna_ignore = new string[]
         {
-            "wwwroot", "node_modules", "obj/", "bin/", ".idea", ".git"
+            "wwwroot", "node_modules", "obj/", "bin/", ".idea", ".git", ".vscode"
         };
     }
 
-    public async Task<List<ProjectInfo>> DiscoverProjects(string root)
+    public async Task<List<ProjectInfo>> DiscoverProjects(string root, bool debug = false)
     {
         Console.WriteLine($"{nameof(folders_I_wanna_ignore)} {folders_I_wanna_ignore.Length}");
 
-        var dirs_only = packages_I_wanna_touch.Select(x => x.Key);
-        dirs_only.Dump(nameof(dirs_only));
+        var dirs_only = Directory.GetDirectories(root).Select(dir => dir.AsDirectory()).ToList();
+        // var ignorelist = HashExtensions.ToHashSet<string>(
+        //     folders_I_wanna_ignore.ToList()
+        //     , key => key);
+        //
+        // var ignoredirs = HashExtensions.ToHashSet<DirectoryInfo>(
+        //     dirs_only
+        //     , info => info.FullName);
+
+        // dirs_only.Dump(nameof(dirs_only));
+
+        // return new List<ProjectInfo>();
+
         var all_dirs_pattern = "(" + string.Join("|", dirs_only) + ")";
         // var all_exclusions_pattern = $@"\/?\b(?!{string.Join("|", folders_I_wanna_ignore)})\b";
         string full_pattern = all_dirs_pattern;
@@ -57,7 +78,7 @@ public class ProjectSniffer
         var all_dirs_regex = new Regex(full_pattern,
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        // return true;
+        // Console.WriteLine("full directory pattern :>> " + full_pattern);
         ConcurrentDictionary<string, List<Grepper.GrepResult>> project_dirs =
             new ConcurrentDictionary<string, List<Grepper.GrepResult>>();
 
@@ -65,15 +86,17 @@ public class ProjectSniffer
             .AsDirectory()
             .DiscoverDirectories(
                 all_dirs_regex
-                , debug: true);
+                , debug: false);
 
         await foreach (var dir in iterator)
         {
-            var collisions = folders_I_wanna_ignore.Where(x => x.Contains(dir)).ToList();
+            // Console.WriteLine("Dir :>> " + dir);
+            var collisions = folders_I_wanna_ignore.Where(x => dir.Contains(x) || dir.Equals(x)).ToList();
+            // Console.WriteLine("Collisions :>> " + collisions.Count);
             if (collisions.Count > 0)
             {
-                collisions.Dump("COLLISIONS");
-                Console.WriteLine("skipping blacklisted directory '" + dir + "'");
+                // collisions.Dump("COLLISIONS");
+                // Console.WriteLine("skipping blacklisted directory '" + dir + "'");
                 continue;
             }
 
@@ -87,7 +110,7 @@ public class ProjectSniffer
                 .DistinctBy(gr => gr.FilePath)
                 .ToList();
 
-            Console.WriteLine($"{files_found.Count} total .csproj files found");
+            // Console.WriteLine($"{files_found.Count} total .csproj files found");
 
             // files_found.Select(gr => gr.FileName).Dump("projects");
 
@@ -96,11 +119,6 @@ public class ProjectSniffer
         }
 
         var results = project_dirs.ToDictionary();
-        Console.WriteLine("total dirs red:>>" + results.Count);
-        // string json = JsonConvert.SerializeObject(results);
-        // File.WriteAllText("results.json", json);
-
-        // group the results by filepath and filename to prevent dups and make the updates easier.
 
         var project_info = results
             .SelectMany(kvp => kvp.Value
@@ -115,71 +133,146 @@ public class ProjectSniffer
                                 VersionRegex.Version.CompiledRegex)
                             .SingleOrDefault() ?? new VersionInfo()
                     };
-                }));
+                })).ToArray();
 
         var grouped_projects = project_info
                 .OrderBy(pi => pi.grep_result.FileName)
                 .ThenByDescending(pi => pi.grep_result.LineNumber)
                 .ThenBy(pi => pi.directory_path)
                 .GroupBy(pi => pi.grep_result.FileName)
+                .ToArray()
             ;
 
-        string grouped_projects_json = JsonConvert.SerializeObject(grouped_projects);
-        File.WriteAllText("grouped.json", grouped_projects_json);
-
-        string versioning_pattern = @"(?<major_release>\d+)\.(?<minor_release>\d{1,3})\.(?<patch>\d{1,3})";
-        var versioning_regex = new Regex(versioning_pattern,
-            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
+        // string grouped_projects_json = JsonConvert.SerializeObject(grouped_projects);
+        // string grouped_projects_filepath = "grouped_projects.json";
+        // if (File.Exists(grouped_projects_filepath))
+        //     File.Delete(grouped_projects_filepath); // ensures freshness
+        // File.WriteAllText(grouped_projects_filepath, grouped_projects_json);
 
         var updated_version_info = project_info
             .GroupBy(project => project.version_info.package_name)
             .SelectMany(group =>
             {
-                // find the latest installed version.
-                var all_versions_for_package = group.Select(pi => pi.version_info).ToArray();
+                // Console.WriteLine("group name : " + group.Key);
 
-                string max_version = "blah";
-                string min_version = "who cares";
+                var all_versions_for_package = group
+                    .Select(pi => pi.version_info)
+                    .ToArray();
 
+                var all_version_numbers = all_versions_for_package
+                        .Select(pkg => pkg.version_number)
+                        .Except(new string[] { "Unknown" })
+                    ;
 
-                // string max_version = group.Max(v => v.version_info.version_number);
-                // string min_version = group.Min(v => v.version_info.version_number);
-
-
-                // update the version to the latest in the group.
-                foreach (var package in group)
+                if (all_version_numbers.Count() > 0)
                 {
-                    package.version_info.lastest_version_number = max_version;
-                    package.version_info.oldest_version_number = min_version;
+                    Console.WriteLine($"Total versions for package {group.Key} " + all_version_numbers.Count());
+                    if (debug) all_version_numbers.Dump("all version numbers");
+                    // var min_version =
+                    //         all_version_numbers
+                    //             .SelectMany(vn => vn.Extract<VersionInfo>(VersionRegex.Version.CompiledRegex))
+                    //             .OrderBy(version => version.major_release)
+                    //             .ThenBy(version => version.minor_release)
+                    //             .ThenBy(version => version.patch)
+                    //             .FirstOrDefault()
+                    //     ;
+                    //
+                    // min_version.Dump("min ver");
+                    VersionInfo max_version =
+                            (all_version_numbers
+                                // .SelectMany(vn => vn.Extract<VersionInfo>(VersionRegex.Release.CompiledRegex))
+                                .SelectMany(vn => vn.Extract<VersionInfo>(VersionRegex.Release.CompiledRegex))
+                                // .Dump("all extracted versions!!!")
+                                .OrderByDescending(version => version.major_release)
+                                .ThenByDescending(version => version.minor_release)
+                                .ThenByDescending(version => version.patch)
+                                .FirstOrDefault() ?? new VersionInfo())
+                            .With(vi => { vi.package_name = group.Key; })
+                        ;
+
+                    // max_version.Dump("Max ver.");
+                    //
+                    // // update the version to the latest in the group.
+                    foreach (var package in group)
+                    {
+                        // Console.WriteLine("updating package :>> " + package.version_info.package_name);
+                        package.version_info.major_release = max_version.major_release;
+                        package.version_info.minor_release = max_version.minor_release;
+                        package.version_info.patch = max_version.patch;
+                    }
                 }
 
                 return group;
-            });
+            }).ToArray();
 
-        var upgrade_plan = updated_version_info.DistinctBy(x => x.version_info.package_name);
-        string upgrade_plan_json = JsonConvert.SerializeObject(upgrade_plan);
+        var upgrade_plan = updated_version_info
+            .DistinctBy(x => x.version_info.package_name).ToArray();
 
-        File.WriteAllText("upgrade_plan.json", upgrade_plan_json);
+        if (debug) Console.WriteLine("Total upgrades planned :" + upgrade_plan.Length);
 
+        // string upgrade_plan_json = JsonConvert.SerializeObject(upgrade_plan);
+        // string upgrade_plan_filepath = "upgrade_plan.json";
+        // if (File.Exists(upgrade_plan_filepath))
+        //     File.Delete(upgrade_plan_filepath);
+        //
+        // File.WriteAllText(upgrade_plan_filepath, upgrade_plan_json);
         var sorted_projects = grouped_projects.Flatten().ToList();
 
         return sorted_projects;
     }
+
+    public async Task<UpgradeStats> UpdateAllProjects(List<ProjectInfo> allProjects)
+    {
+        var Q = new SerialQueue();
+
+        var tasks = allProjects
+            .Take(1)
+            .Select(project => Q
+                .Enqueue(async () => { await UpdateCsprojFile(project); }));
+
+        await Task.WhenAll(tasks);
+
+        return new UpgradeStats();
+    }
+
+    private async Task<string> UpdateCsprojFile(ProjectInfo project)
+    {
+        string next_version = project.version_info.lastest_version_number;
+        string package_name = project.version_info.package_name;
+        string csproj_filepath = project.grep_result.FilePath;
+        
+        string[] lines = File.ReadAllLines(csproj_filepath);
+        if (lines.Length == 0) return string.Empty;
+        // string package_pattern = @"\<PackageReference";
+        var replacement_map = new Dictionary<string, string>()
+        {
+            [$@"<PackageReference\s*Include=""{package_name}""\s*Version=""([\w\.0-9]+)""\s\/>"]
+                = $"<PackageReference Include=\"{package_name}\" Version=\"{next_version}\" />"
+        };
+
+        var updated_text = lines.ReplaceAll(replacement_map);
+        updated_text.Dump();
+        File.WriteAllLines(csproj_filepath, updated_text);
+        Console.WriteLine("Updated cproj : " + csproj_filepath);
+        return "";
+    }
 }
+
 
 public record ProjectInfo
 {
+    // todo: extract this as well, and update to latest.
     public string[] raw_using_statements { get; set; } = Array.Empty<string>();
     public string directory_path { get; set; }
     public Grepper.GrepResult grep_result { get; set; } = new();
     public VersionInfo version_info { get; set; } = new();
 }
 
-public record VersionInfo
+public class VersionInfo
 {
     public string package_name { get; set; } = string.Empty;
     public string version_number { get; set; } = string.Empty;
-    public string lastest_version_number { get; set; } = string.Empty;
+    public string lastest_version_number => $"{major_release}.{minor_release}.{patch}"; //{ get; set; } = string.Empty;
     public string oldest_version_number { get; set; } = string.Empty;
 
     public int major_release { get; set; } = 1;
@@ -192,13 +285,17 @@ public class VersionRegex : Enumeration
 {
     public Regex CompiledRegex { get; }
 
-    // https://regex101.com/r/JS9kCx/1
     public static VersionRegex Version { get; set; } = new VersionRegex(1, nameof(Version),
         @"Include=""(?<package_name>[\w\d.]+?)""\s*Version=""(?<version_number>(\d+\.\d+\.\d+|\w+))""");
 
+    // https://regex101.com/r/JS9kCx/1
+    public static VersionRegex Release { get; set; } = new VersionRegex(1, nameof(Release),
+        @"(?<major_release>\d+)\.(?<minor_release>\d{1,3})\.(?<patch>\d{1,3})");
+
     public VersionRegex(int id, string name, string pattern) : base(id, name)
     {
-        CompiledRegex = new Regex(pattern, RegexOptions.Compiled);
+        CompiledRegex = new Regex(pattern,
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
     }
 }
 
@@ -210,4 +307,22 @@ public record UsingStatement
 public record NamespaceStatement
 {
     public string detected_namespace { get; set; } = string.Empty;
+}
+
+public static class HashExtensions
+{
+    public static HashSet<string> ToHashSet<T>(this List<T> outer,
+        Func<T, string> selector
+    )
+    {
+        var set = outer.Select(selector).ToHashSet();
+        return set;
+    }
+}
+
+public record UpgradeStats
+{
+    public int successful_upgrades { get; set; } = -1;
+    public int failed_upgrades { get; set; } = -1;
+    public int total_projects { get; set; } = -1;
 }

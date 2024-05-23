@@ -11,6 +11,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="CodeMechanic.Async" Version="1.0.1" />
       <PackageReference Include="CodeMechanic.Diagnostics" Version="1.0.3" />
       <PackageReference Include="CodeMechanic.Embeds" Version="1.0.0" />
       <PackageReference Include="CodeMechanic.FileSystem" Version="1.1.0" />
