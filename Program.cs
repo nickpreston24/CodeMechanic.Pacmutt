@@ -6,6 +6,7 @@ using CodeMechanic.Advanced.Regex;
 using CodeMechanic.Diagnostics;
 using CodeMechanic.FileSystem;
 using CodeMechanic.Shargs;
+using CodeMechanic.Types;
 using Newtonsoft.Json;
 
 Console.WriteLine("Hello, Woof!");
@@ -16,22 +17,20 @@ var cmds = new ArgumentsCollection(args);
 project_directories.Dump("project directories");
 (var _, var root_dir) = cmds.Matching("-r", "--root-dir");
 
-
 string root = (root_dir.SingleOrDefault() ?? string.Empty).GoUp();
 root.Dump("root");
 
 bool root_exists = Path.Exists(root);
 Console.WriteLine($"root exists? {root_exists}");
 
+var all_projects = new ProjectSniffer().DiscoverProjects(root);
 
-new ProjectFinder().DiscoverProjects(root);
-
-public class ProjectFinder
+public class ProjectSniffer
 {
     private readonly Dictionary<string, string> packages_I_wanna_touch = new();
     private readonly string[] folders_I_wanna_ignore;
 
-    public ProjectFinder()
+    public ProjectSniffer()
     {
         packages_I_wanna_touch = new Dictionary<string, string>()
         {
@@ -43,14 +42,17 @@ public class ProjectFinder
         };
     }
 
-    public async Task<bool> DiscoverProjects(string root)
+    public async Task<List<ProjectInfo>> DiscoverProjects(string root)
     {
+        Console.WriteLine($"{nameof(folders_I_wanna_ignore)} {folders_I_wanna_ignore.Length}");
+
         var dirs_only = packages_I_wanna_touch.Select(x => x.Key);
+        dirs_only.Dump(nameof(dirs_only));
         var all_dirs_pattern = "(" + string.Join("|", dirs_only) + ")";
-        var all_exclusions_pattern = $@"\/?\b(?!{string.Join("|", folders_I_wanna_ignore)})\b";
-        string full_pattern = all_exclusions_pattern + all_dirs_pattern;
+        // var all_exclusions_pattern = $@"\/?\b(?!{string.Join("|", folders_I_wanna_ignore)})\b";
+        string full_pattern = all_dirs_pattern;
         // Console.WriteLine("fullpattern:>>" + full_pattern);
-        
+
         // sample: https://regex101.com/r/kdW20j/1
         var all_dirs_regex = new Regex(full_pattern,
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -67,6 +69,14 @@ public class ProjectFinder
 
         await foreach (var dir in iterator)
         {
+            var collisions = folders_I_wanna_ignore.Where(x => x.Contains(dir)).ToList();
+            if (collisions.Count > 0)
+            {
+                collisions.Dump("COLLISIONS");
+                Console.WriteLine("skipping blacklisted directory '" + dir + "'");
+                continue;
+            }
+
             var files_found = new Grepper()
                 {
                     RootPath = dir,
@@ -102,8 +112,7 @@ public class ProjectFinder
                         grep_result = grp,
                         version_info = grp.Line
                             .Extract<VersionInfo>(
-                                // https://regex101.com/r/yufkKD/1
-                                @"Include=""(?<package_name>[\w\d.]+?)""\s*Version=""(?<version_number>(\d+\.\d+\.\d+|\w+))""")
+                                VersionRegex.Version.CompiledRegex)
                             .SingleOrDefault() ?? new VersionInfo()
                     };
                 }));
@@ -118,7 +127,43 @@ public class ProjectFinder
         string grouped_projects_json = JsonConvert.SerializeObject(grouped_projects);
         File.WriteAllText("grouped.json", grouped_projects_json);
 
-        return true;
+        string versioning_pattern = @"(?<major_release>\d+)\.(?<minor_release>\d{1,3})\.(?<patch>\d{1,3})";
+        var versioning_regex = new Regex(versioning_pattern,
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
+
+        var updated_version_info = project_info
+            .GroupBy(project => project.version_info.package_name)
+            .SelectMany(group =>
+            {
+                // find the latest installed version.
+                var all_versions_for_package = group.Select(pi => pi.version_info).ToArray();
+
+                string max_version = "blah";
+                string min_version = "who cares";
+
+
+                // string max_version = group.Max(v => v.version_info.version_number);
+                // string min_version = group.Min(v => v.version_info.version_number);
+
+
+                // update the version to the latest in the group.
+                foreach (var package in group)
+                {
+                    package.version_info.lastest_version_number = max_version;
+                    package.version_info.oldest_version_number = min_version;
+                }
+
+                return group;
+            });
+
+        var upgrade_plan = updated_version_info.DistinctBy(x => x.version_info.package_name);
+        string upgrade_plan_json = JsonConvert.SerializeObject(upgrade_plan);
+
+        File.WriteAllText("upgrade_plan.json", upgrade_plan_json);
+
+        var sorted_projects = grouped_projects.Flatten().ToList();
+
+        return sorted_projects;
     }
 }
 
@@ -134,6 +179,27 @@ public record VersionInfo
 {
     public string package_name { get; set; } = string.Empty;
     public string version_number { get; set; } = string.Empty;
+    public string lastest_version_number { get; set; } = string.Empty;
+    public string oldest_version_number { get; set; } = string.Empty;
+
+    public int major_release { get; set; } = 1;
+    public int minor_release { get; set; } = 0;
+    public int patch { get; set; } = 0;
+}
+
+
+public class VersionRegex : Enumeration
+{
+    public Regex CompiledRegex { get; }
+
+    // https://regex101.com/r/JS9kCx/1
+    public static VersionRegex Version { get; set; } = new VersionRegex(1, nameof(Version),
+        @"Include=""(?<package_name>[\w\d.]+?)""\s*Version=""(?<version_number>(\d+\.\d+\.\d+|\w+))""");
+
+    public VersionRegex(int id, string name, string pattern) : base(id, name)
+    {
+        CompiledRegex = new Regex(pattern, RegexOptions.Compiled);
+    }
 }
 
 public record UsingStatement
