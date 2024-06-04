@@ -1,3 +1,4 @@
+**/*.rest
 nupkg/
 obj/
 bin/

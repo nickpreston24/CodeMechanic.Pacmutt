@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
-using CodeMechanic.Advanced.Regex;
+using CodeMechanic.RegularExpressions;
 using CodeMechanic.Async;
 using CodeMechanic.Diagnostics;
 using CodeMechanic.FileSystem;
