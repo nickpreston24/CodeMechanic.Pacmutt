@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using CodeMechanic.Diagnostics;
 using CodeMechanic.RegularExpressions;
+using CodeMechanic.Shargs;
 using CodeMechanic.Types;
 
 public class NpmPackageSniffer
@@ -15,11 +16,15 @@ public class NpmPackageSniffer
     public NpmPackageSniffer(string[] args)
     {
         args.Dump(nameof(args));
-        string sample_npm_project_root =
-            "/home/nick/Desktop/projects/samples/hot-reloading-docker/nodejs-with-mongodb-api-example";
+        // var options = new ArgumentsCollection(args);
+        // options.Dump(nameof(options));
+        // options.Arguments.Dump("arguments");
 
-        rootfolder = // args.Length > 0 ? args[0] : 
-            sample_npm_project_root;
+        // Console.WriteLine(options.Length);
+        rootfolder = args.Length == 2
+            ? args[1]
+            : "/home/nick/Desktop/projects/samples/hot-reloading-docker/nodejs-with-mongodb-api-example";
+        Console.WriteLine($"root folder set to '{rootfolder}'");
     }
 
     public async Task<NpmPackageSniffer> FindOutDatedNPMPackages(
