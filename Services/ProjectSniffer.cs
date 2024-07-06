@@ -4,14 +4,16 @@ using CodeMechanic.Async;
 using CodeMechanic.Diagnostics;
 using CodeMechanic.FileSystem;
 using CodeMechanic.RegularExpressions;
+using CodeMechanic.Shargs;
 using CodeMechanic.Types;
 
 public class ProjectSniffer
 {
     private readonly Dictionary<string, string> packages_I_wanna_touch = new();
     private readonly string[] folders_I_wanna_ignore;
+    private string root;
 
-    public ProjectSniffer()
+    public ProjectSniffer(string[] args)
     {
         packages_I_wanna_touch = new Dictionary<string, string>()
         {
@@ -21,13 +23,29 @@ public class ProjectSniffer
         {
             "wwwroot", "node_modules", "obj/", "bin/", ".idea", ".git", ".vscode"
         };
+
+
+        var cmds = new ArgumentsCollection(args);
+
+// (var _, var project_directories) = cmds.Matching("-p", "--projects");
+// project_directories.Dump("project directories"); // Todo: allow dashes in shargs regex!!  Example: `code-mechanic` gets parsed as `code`!!
+
+// TODO: this is broken as of ver. 1.0.2 and needs fixing.  Prolly the regex.
+        (var _, var root_dir) = cmds.Matching("-r", "--root-dir");
+
+// string root = (root_dir.SingleOrDefault() ?? string.Empty).GoUp();
+        root = root_dir.SingleOrDefault() ?? Directory.GetCurrentDirectory().GoUp();
+        Console.WriteLine("root :>> " + root);
+
+// bool root_exists = Path.Exists(root);
+// Console.WriteLine($"root exists? {root_exists}");
     }
 
-    public async Task<List<ProjectInfo>> DiscoverProjects(string root, bool debug = false)
+    public async Task<List<ProjectInfo>> DiscoverProjects(bool debug = false)
     {
         Console.WriteLine($"{nameof(folders_I_wanna_ignore)} {folders_I_wanna_ignore.Length}");
 
-        var dirs_only = Directory.GetDirectories(root).Select(dir => dir.AsDirectory()).ToList();
+        var dirs_only = Directory.GetDirectories(this.root).Select(dir => dir.AsDirectory()).ToList();
         // var ignorelist = HashExtensions.ToHashSet<string>(
         //     folders_I_wanna_ignore.ToList()
         //     , key => key);
@@ -211,7 +229,7 @@ public class ProjectSniffer
         string next_version = project.version_info.lastest_version_number;
         string package_name = project.version_info.package_name;
         string csproj_filepath = project.grep_result.FilePath;
-        
+
         string[] lines = File.ReadAllLines(csproj_filepath);
         if (lines.Length == 0) return string.Empty;
         // string package_pattern = @"\<PackageReference";

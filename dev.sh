@@ -1,1 +1,1 @@
-dotnet watch run --project . --projects code-mechanic -r /home/nick/Desktop/projects/personal/
+sudo dotnet watch run --project . --projects code-mechanic --root-dir /home/nick/Desktop/projects/personal/

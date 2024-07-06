@@ -1,1 +1,1 @@
- dotnet tool install --global --add-source ./nupkg CodeMechanic.Pacmutt
+ sudo dotnet tool install --global --add-source ./nupkg CodeMechanic.Pacmutt

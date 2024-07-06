@@ -16,6 +16,7 @@ public static class BashExtensions
     public static async Task<string> Bash(
         this string command
         , bool verbose = false
+        , bool debug = false
         , Action<string> writeline = null
     )
     {
@@ -41,7 +42,7 @@ public static class BashExtensions
 
         // process.WaitForExit();
         await process.WaitForExitAsync();
-        Console.WriteLine("hello from bash (process done)");
+        if (debug) Console.WriteLine("hello from bash (process done)");
 
         if (verbose) writeline("Done!");
 
