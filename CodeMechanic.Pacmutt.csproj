@@ -5,22 +5,22 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-<!--        <LangVersion>latest</LangVersion>-->
+        <!--        <LangVersion>latest</LangVersion>-->
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>pacmutt</ToolCommandName>
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="CodeMechanic.Async" Version="1.0.2" />
-      <PackageReference Include="CodeMechanic.Diagnostics" Version="1.0.3" />
-      <PackageReference Include="CodeMechanic.Embeds" Version="1.0.0" />
-      <PackageReference Include="CodeMechanic.FileSystem" Version="1.0.12" />
-      <PackageReference Include="CodeMechanic.Maths" Version="1.0.0" />
-      <PackageReference Include="CodeMechanic.Reflection" Version="1.0.4" />
-      <PackageReference Include="CodeMechanic.Regex" Version="1.0.6" />
-      <PackageReference Include="CodeMechanic.Shargs" Version="1.0.2" />
-      <PackageReference Include="CodeMechanic.Types" Version="1.0.10" />
-      <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+        <PackageReference Include="CodeMechanic.Async" Version="1.0.2"/>
+        <PackageReference Include="CodeMechanic.Diagnostics" Version="1.0.3"/>
+        <PackageReference Include="CodeMechanic.Embeds" Version="1.0.0"/>
+        <PackageReference Include="CodeMechanic.FileSystem" Version="2.0.0"/>
+        <PackageReference Include="CodeMechanic.Maths" Version="1.0.0"/>
+        <PackageReference Include="CodeMechanic.Reflection" Version="1.0.4"/>
+        <PackageReference Include="CodeMechanic.RegularExpressions" Version="1.0.1"/>
+        <PackageReference Include="CodeMechanic.Shargs" Version="1.0.2"/>
+        <PackageReference Include="CodeMechanic.Types" Version="1.0.10"/>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
     </ItemGroup>
 
 </Project>

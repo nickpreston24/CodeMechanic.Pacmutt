@@ -1,3 +1,6 @@
+.cache
+grouped_projects.json
+upgrade_plan.json
 **/*.rest
 nupkg/
 obj/
